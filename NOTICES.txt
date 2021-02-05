@@ -1,0 +1,8 @@
+tda-tools
+Copyright (C) 2021 Jose Bouza
+LGPL v 2.1
+
+Persistence Landscape toolbox
+Copyright (C) 2013 - 2014 University of Pennsylvania
+Created by Pawel Dlotko
+LGPL v 3

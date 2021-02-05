@@ -1,0 +1,5 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+NOTICES.txt
+GPL.txt
+LICENSE.txt
