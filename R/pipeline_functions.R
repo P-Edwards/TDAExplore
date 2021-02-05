@@ -71,14 +71,11 @@ patch_landscapes_from_image <- function(image_name,number_of_patches,pixel_radiu
   
 # generate centers
   if(!(patch_center_image==FALSE)) { 
-    print(paste("Started image ", image_name))    
-    print(paste("With image for patch centers: ",patch_center_image))
     center_image <- OpenImageR::readImage(patch_center_image)
     center_image <- low_pixel_threshold(center_image,noise_threshold)
     image_cdf <- create_cdf_vector(center_image)
     sampling_dims <- dim(center_image)    
-  } else { 
-    print(paste("Started image ", image_name))    
+  } else {     
     image_cdf <- create_cdf_vector(image_data)
     sampling_dims <- dim(image_data)
   }
