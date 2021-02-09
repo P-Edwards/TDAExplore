@@ -142,6 +142,372 @@ patch_landscapes_from_image <- function(image_name,number_of_patches,pixel_radiu
   }
 }
 
+#' Train and cross-validate a linear SVM classifier from image landscapes
+#'
+#' @param parameters File path to csv file designating which folders to analyze. A template parameters.csv is included at https://github.com/P-Edwards/TDAExplore-ML. 
+#' You can alternatively provide parameters via this function's arguments directly. If you provide both a parameters file and function arguments, the function 
+#' arguments will overwrite the arguments from the csv file.
+#' @param number_of_cores The number of CPU cores for parallelization. Parallelization is over images, so allocating more cores than images provides no benefit.
+#' @param experiment_name Prefix that will have additional information appended to form an informative file name for saving. Default is nothing.
+#' @param image_directories Character vector of paths to directories holding image files to process. 
+#' @param patch_center_image_directories Character vector of the same length as image_directories with paths to directories holding image files. The files in 
+#' patch_center_image_directories[i] will be matched, in alphabetical order, to the files in image_directories[i], and used for selecting the centers of patches.
+#' This is useful when e.g. patch_center_image_directories[i] contains masks for parts of the images in image_directories[i] to focus on. patch_center_image_directories[i]
+#' may also be set to FALSE instead of a path, in which case no masked images will be used for center selection with image_directories[i].
+#' @param directory_classes Character vector of same length as image directories. directory_classes[i] specifies the class of the images in image_directories[i].
+#' @param data_results_directory File path (relative to current working directory) where data results can be saved. This function will only produce a file path
+#' for saving, the user must save the results themselves if desired. ./tda_explores_results is the default.
+#' @param radius_of_patches Pixel radius of patches. Default is 50 pixels.
+#' @param patch_ratio The number of patches sampled per image will be patch_ratio*(PIXEL AREA OF IMAGE)/(PIXEL AREA OF SINGLE PATCH). Default is 2.
+#' @param svm If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image. 
+#' @param verbose If set to TRUE, outputs some progress information using print. Default is FALSE.
+#' @param benchmark If set to TRUE, uses a fork cluster type which is more easily trackable by benchmarking software. Does nothing on Windows. Default is FALSE.
+#' @param lower Experimental, leave default. 
+#' @param upper Experimental, leave default.
+#' 
+#' @return Returns a list, ml_results, whose entries contain the computation results. 
+#' \itemize{
+#'  \item{**ml_results$data_results_directory**}{ See arguments, stored for convenience.}
+#'  \item{**ml_results$data_name_stem**}{ See arguments, stored for convenience}
+#'  \item{**ml_results$summaries**}{ Matrix of computed landscapes for patches.}
+#'  \item{**ml_results$patch_types**}{ Vector designating which class of image each landscape (row in the summaries matrix) comes from}
+#'  \item{**ml_results$svm**}{ List containing results from each of the 5 folds of SVM training-testing computation}
+#' }
+#' @export
+#' @examples
+#' computation_results <- TDAexplore("parameters.csv",number_of_cores=5,verbose=TRUE)
+TDAexplore <- function(parameters=FALSE,
+                       number_of_cores=2,
+                       experiment_name="",
+                       image_directories=FALSE,
+                       patch_center_image_directories=FALSE,
+                       directory_classes=FALSE,
+                       data_results_directory=FALSE,
+                       radius_of_patches=FALSE,
+                       patch_ratio=2,
+                       svm=FALSE,
+                       verbose=FALSE,
+                       benchmark=FALSE,
+                       lower=0,
+                       upper=1) { 
+  data_parameters <- utils::read.csv(parameters)
+  provided_parameters <- colnames(data_parameters)
+  ml_results <- list()
+
+  if(image_directories!=FALSE) { 
+    image_type_names <- image_directories
+  } else if("image_directories" %in% provided_parameters) { 
+    image_type_names <- data_parameters[,"image_directories"]
+  } else { 
+    stop("Image directories not specified, and there is no default.")
+  }
+  # Default behavior: Every directory is in different class
+  if(directory_classes!=FALSE) { 
+    class_names <- directory_classes
+  } else if("directory_classes" %in% provided_parameters) { 
+    class_names <- data_parameters[,"directory_classes"]
+  } else { 
+    warning("No classes for directory specified, using directory names as a default.")
+    class_names <- image_type_names
+  }
+  if(patch_center_image_directories!=FALSE) { 
+    patch_center_names <- patch_center_image_directories
+    patch_center_flag <- TRUE
+  } else if("patch_center_images_directories" %in% provided_parameters) { 
+    patch_center_names <- data_parameters[,"patch_center_images_directories"]
+    patch_center_flag <- TRUE
+  } else { 
+    patch_center_flag <- FALSE 
+  }
+
+
+  image_file_names_by_directory <- list()
+  patch_center_file_names_by_directory <- list()
+
+  total_number_of_files <- 0
+  for(i in 1:length(image_type_names)) { 
+    image_file_names_by_directory[[i]] <- list.files(levels(image_type_names)[image_type_names[i]],full.names=TRUE)
+    if(patch_center_flag) { 
+      patch_center_file_names_by_directory[[i]] <- list.files(levels(patch_center_names)[patch_center_names[i]],full.names=TRUE)
+    } else { 
+      # instead sets up a vector of appropriate length that is all FALSE
+      patch_center_file_names_by_directory[[i]] <- as.vector(image_file_names_by_directory[[i]],mode="logical")
+      patch_center_file_names_by_directory[[i]][1:length(patch_center_file_names_by_directory[[i]])] <- FALSE
+    }
+    total_number_of_files <- total_number_of_files + length(image_file_names_by_directory[[i]])
+  }
+
+  # Default behavior: Pixel radius is 2.5% of image length.
+  if(radius_of_patches==FALSE) { 
+    if("radius_of_patches" %in% provided_parameters) { 
+        radius_of_patches <- data_parameters[1,"radius_of_patches"]
+    } else { 
+        warning("No pixel radius for patches specified. Using default, which is 2.5% of image length.")      
+        first_image <- OpenImageR::readImage(unlist(image_file_names_by_directory)[2])
+        radius_of_patches <- floor(0.025*dim(first_image)[1])
+    }
+  } 
+
+  image_for_dimensions <- OpenImageR::readImage(image_file_names_by_directory[[1]][1])
+  pixel_area_of_images <- nrow(image_for_dimensions)*ncol(image_for_dimensions)
+  patches_per_image <- floor(patch_ratio*pixel_area_of_images/(2*radius_of_patches)**2)
+
+  if(experiment_name==FALSE) {
+    if("experiment_name" %in% provided_parameters) {
+      experiment_name <- data_parameters[1,"experiment_name"]
+    } else { 
+      experiment_name <- floor(ruinf(1,min=0,max=1e6))
+    }
+  }
+
+  if(data_results_directory==FALSE) { 
+    if("data_results_directory" %in% provided_parameters) { 
+      data_results_directory <- file.path(data_parameters[1,"data_results_directory"])
+    } else { 
+      data_results_directory <- "tda_explore_results"  
+    }
+  }
+  if(!dir.exists(data_results_directory)) { 
+    warning(paste("Results directory didn't exist, creating ",data_results_directory))
+    dir.create(data_results_directory)
+  }
+  ml_results$data_results_directory <- data_results_directory
+  data_name_stem <- paste(experiment_name,patches_per_image,"patches_",radius_of_patches,"radius_",format(Sys.time(), "%b-%d-%S",digits=3),sep = "")
+  if(upper - lower < 1) { 
+    data_name_stem <- paste(data_name_stem,"_radialthresh")
+  }
+  ml_results$data_name_stem <- data_name_stem
+
+
+  i <- 1
+  type_vector <- vector("character",length=total_number_of_files*patches_per_image)
+  offset <- 0
+  for(image_list in image_file_names_by_directory) { 
+    type_vector[(1+offset):(offset+length(image_list)*patches_per_image)] <- class_names[[i]]
+    offset <- offset + length(image_list)*patches_per_image
+    i <- i+1 
+  }
+
+
+  image_name_iterator <- iterators::iter(cbind(unlist(image_file_names_by_directory),unlist(patch_center_file_names_by_directory)),by="row")
+
+  if(!benchmark) {
+    cl <- parallel::makeCluster(number_of_cores,outfile="")
+    doParallel::registerDoParallel(cl)
+    } else { 
+      # Forking using DoMC is picked up by SLURM
+      # Only available on Linux
+      doMC::registerDoMC(cores=number_of_cores)
+    }
+  `%dopar` <- foreach::`%dopar%`
+  unscrambled_data <- foreach::foreach(image_name=image_name_iterator,.combine=rbind,.packages=c("TDAExplore")) %dopar% { 
+    options(warn=-1)
+    if(verbose) {
+      print(paste("Started image ", image_name))    
+      if(image_name[2]!=FALSE) {
+        print(paste("With image for patch centers: ",patch_center_image))
+      }
+    }
+    patch_summaries <- TDAExplore::patch_landscapes_from_image(image_name[1],patches_per_image,patch_center_image=image_name[2],pixel_radius_for_patches = radius_of_patches,proportion_of_patch_sparse=.025,max_PH_threshold=-1,lower_threshold=lower,upper_threshold=upper) 
+    if(verbose) {
+      print(paste("Finished image ", image_name))    
+    }
+    patch_summaries
+  }
+  if(!benchmark) {
+    parallel::stopCluster(cl)
+  }
+
+  if(length(type_vector)>=2147483647) { 
+    unscrambled_data <- as.matrix(do.call(rbind,unscrambled_data))
+  } else { 
+    unscrambled_data <- as.matrix.csr(do.call(rbind,unscrambled_data))
+  }
+
+
+  image_file_names <- unlist(image_file_names_by_directory)
+
+  
+  ml_results$summaries <- unscrambled_data
+  ml_results$patch_types <- type_vector
+
+  if(svm) {
+    if(verbose) {
+      print("Starting per-landscape SVM")
+    }
+    ml_results$svm <- list()
+
+    # Cross validation on PCA-rotated patch landscapes
+    number_of_validation_steps <- 5
+    
+    #randomly shuffle the data
+    shuffled_order <- sample(length(image_file_names))
+    shuffled_image_names <- image_file_names[shuffled_order]
+
+    shuffled_patch_indices <- vector(mode="double",length=length(type_vector))
+    image_folds <- cut(seq(1,length(shuffled_image_names)),breaks=number_of_validation_steps,labels=FALSE)
+    folds <- vector(mode="double",length=length(type_vector))
+    for(i in 1:length(shuffled_order)) { 
+      image_index <- shuffled_order[i]
+      shuffled_patch_indices[((i-1)*patches_per_image+1):(i*patches_per_image)] <- ((image_index-1)*patches_per_image+1):(image_index*patches_per_image)
+      folds[((i-1)*patches_per_image+1):(i*patches_per_image)] <- image_folds[i]
+    }
+
+    # First: Use 20% of the data to tune SVM parameters.  
+
+    shuffled_pca <- unscrambled_data[shuffled_patch_indices,]
+    shuffled_types <- type_vector[shuffled_patch_indices]
+    trainIndexes <- which(folds==1,arr.ind=TRUE)
+
+    # Quick heuristic parameter tuning
+    cost <- heuristicC(as.matrix(shuffled_pca[trainIndexes,]))
+
+
+
+    # Now do cross validation with the remaining data and selected parameters
+    reduced_data <- shuffled_pca
+    reduced_types <- shuffled_types
+
+    shuffled_pca <- NULL
+    shuffled_types <- NULL
+    gc()
+
+    patch_accuracies <- vector("double",number_of_validation_steps)
+    image_accuracies <- vector("double",number_of_validation_steps)
+
+    SVM_file_path <- file.path(data_results_directory,paste(data_name_stem,"_SVM_cross_validation.csv",sep=""))
+    SVM_avg_per_patch_file_path <- file.path(data_results_directory,paste(data_name_stem,"_patch_feature_average_image_SVM_cross_validation.csv",sep=""))
+    proportion_vector <- vector("double",length=max(reduced_types))
+    for(i in 1:max(reduced_types)) { 
+      proportion_vector[i] <- sum(reduced_types==i)/length(reduced_types)
+    }
+    write.csv(data.frame(proportion_vector,row.names=levels(class_names)),file=SVM_file_path,append=FALSE)
+    write.csv(data.frame(proportion_vector,row.names=levels(class_names)),file=SVM_avg_per_patch_file_path,append=FALSE)
+
+    reduced_types_unique <- unique(type_vector)
+    for(i in 1:number_of_validation_steps) { 
+      if(verbose) {
+        print(paste("Starting cross validation fold number ",i))
+      }
+      testIndexes <- which(folds==i,arr.ind=TRUE)
+      trainIndexes <- -testIndexes
+      weights <- vector(mode="double",length=length(unique(reduced_types[trainIndexes])))
+      names(weights) <- unique(reduced_types[trainIndexes]) 
+      for(j in 1:length(weights)) { 
+        weights[j] <- sum(reduced_types[trainIndexes]==names(weights)[j])
+      }
+      max_number <- max(weights)
+      for(j in 1:length(weights)) { 
+        weights[j] <- max_number/weights[j]
+      }
+      reduced_types_training <- reduced_types[trainIndexes]
+      train_data <- reduced_data[trainIndexes,]
+      if(reduced_types_training[1]!=reduced_types_unique[1]) { 
+        switch_index <- min(which(reduced_types_training==reduced_types_unique[1]))
+        reduced_types_training[1] <- reduced_types_unique[1]
+        reduced_types_training[switch_index] <- reduced_types_unique[2]
+        temporary_row <- train_data[switch_index,]
+        train_data[switch_index,] <- train_data[1,]
+        train_data[1,] <- temporary_row
+      }
+      svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(reduced_types_training),wi=weights,cost=cost,type=2)
+
+      ml_results$svm[[i]] <- list()
+      ml_results$svm[[i]]$testing_data <- reduced_data[testIndexes,]
+      ml_results$svm[[i]]$testing_labels <- reduced_types[testIndexes]
+      
+      prediction_values <- predict(svm_model,reduced_data[testIndexes,])
+      actual_names <- levels(class_names)
+      predicted_names <- levels(class_names)
+      for(j in 1:length(actual_names)) { 
+        actual_names[j] <- paste(actual_names[j],"_actual")
+        predicted_names[j] <- paste(predicted_names[j],"_predicted")
+      }
+      pred_table <- table(factor(prediction_values$predictions,labels=predicted_names,levels=unique(reduced_types)),factor(reduced_types[testIndexes],labels=actual_names,levels=unique(reduced_types)))
+      write.table(pred_table,file=SVM_file_path,sep=",",dec=".",append=TRUE)
+      patch_accuracies[i] <- sum(diag(pred_table))/sum(pred_table)
+      
+      # Classification with average transformed image data
+      # i.e. 
+      # (1) Transform all patch landscapes into single numbers using model
+      # (2) Average all numbers across each image
+      # (3) Train and test an SVM model for classifying images
+      model_matrix <- svm_model$W
+      weight_vector <- model_matrix[1,(1:(dim(model_matrix)[2]-1))]
+      bias_term <- model_matrix[1,dim(model_matrix)[2]]
+      transformed_data <- as.matrix.csr(reduced_data%*%(weight_vector) + bias_term,nrow=nrow(reduced_data),ncol=1)
+      averaged_data <- average_vectors_for_images(transformed_data,patches_per_image,shuffled_image_names,reduced_types,1,1)
+      transformed_data <- averaged_data$image_weights
+      transformed_types <- averaged_data$image_types
+      
+      costIndexes <- which(image_folds==1,arr.ind=TRUE)
+      testIndexes <- which(image_folds==i,arr.ind=TRUE)
+      trainIndexes <- -testIndexes
+
+      # Quick heuristic parameter tuning
+      image_cost <- heuristicC(as.matrix(transformed_data[costIndexes,]))
+
+      train_data <- as.matrix.csr(transformed_data[trainIndexes,],ncol=1)
+      test_data <- as.matrix.csr(transformed_data[testIndexes,],ncol=1)
+
+      weights <- vector(mode="double",length=length(unique(transformed_types[trainIndexes])))
+      names(weights) <- unique(transformed_types[trainIndexes]) 
+      for(j in 1:length(weights)) { 
+        weights[j] <- sum(transformed_types[trainIndexes]==names(weights)[j])
+      }
+      max_number <- max(weights)
+      for(j in 1:length(weights)) { 
+        weights[j] <- max_number/weights[j]
+      }
+
+      transformed_types_training <- transformed_types[trainIndexes]
+      if(transformed_types_training[1]!=reduced_types_unique[1]) { 
+        switch_index <- min(which(transformed_types_training==reduced_types_unique[1]))
+        transformed_types_training[1] <- reduced_types_unique[1]
+        transformed_types_training[switch_index] <- reduced_types_unique[2]
+        temporary_row <- train_data[switch_index,]
+        train_data[switch_index,] <- train_data[1,]
+        train_data[1,] <- temporary_row
+      }
+      image_svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(transformed_types_training),cost=image_cost,wi=weights,type=2)
+      prediction_values <- predict(image_svm_model,test_data)
+      actual_names <- levels(class_names)
+      predicted_names <- levels(class_names)
+      for(j in 1:length(actual_names)) { 
+        actual_names[j] <- paste(actual_names[j],"_actual")
+        predicted_names[j] <- paste(predicted_names[j],"_predicted")
+      }
+      pred_table <- table(factor(prediction_values$predictions,labels=predicted_names,levels=unique(transformed_types)),factor(transformed_types[testIndexes],labels=actual_names,levels=unique(transformed_types)))
+      write.table(pred_table,file=SVM_avg_per_patch_file_path,sep=",",dec=".",append=TRUE)
+      image_accuracies[i] <- sum(diag(pred_table))/sum(pred_table)
+      
+      ml_results$svm[[i]]$svm_model <- svm_model
+      ml_results$svm[[i]]$patch_svm_model <- svm_model
+      ml_results$svm[[i]]$image_svm_model <- image_svm_model
+      ml_results$svm[[i]]$svm_image_training_indices <- shuffled_order[trainIndexes]
+      ml_results$svm[[i]]$svm_patch_accuracies <- patch_accuracies
+      ml_results$svm[[i]]$svm_image_accuracies <- image_accuracies
+      ml_results$svm[[i]]$svm_cost <- cost 
+    }
+
+    # write.table(table(patch_accuracies),file=SVM_file_path,append=TRUE,sep=",",dec=".")
+    # write.table(table(c(mean(patch_accuracies))),file=SVM_file_path,append=TRUE,sep=",",dec=".")
+    if(verbose) {
+      print("Radius")
+      print(radius_of_patches)
+      print("Average patch accuracies")
+      print(mean(patch_accuracies))
+      print("Average image accuracies")
+      print(mean(image_accuracies))
+    }
+    # write.table(table(image_accuracies),file=SVM_avg_per_patch_file_path,append=TRUE,sep=",",dec=".")
+    # write.table(table(c(mean(image_accuracies))),file=SVM_avg_per_patch_file_path,append=TRUE,sep=",",dec=".")
+
+  }
+  return(ml_results)
+}
+
+
 #' Convolve an image using patch scores
 #'
 #' Combines landscape data, data for positioning patches on an image, and a scoring function for landscapes
