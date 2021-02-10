@@ -190,7 +190,7 @@ TDAExplore <- function(parameters=FALSE,
                        benchmark=FALSE,
                        lower=0,
                        upper=1) { 
-  data_parameters <- utils::read.csv(parameters)
+  data_parameters <- utils::read.csv(parameters,stringsAsFactors=TRUE)
   provided_parameters <- colnames(data_parameters)
   ml_results <- list()
 
