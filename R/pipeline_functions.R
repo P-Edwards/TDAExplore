@@ -175,10 +175,10 @@ patch_landscapes_from_image <- function(image_name,number_of_patches,pixel_radiu
 #' }
 #' @export
 #' @examples
-#' computation_results <- TDAexplore("parameters.csv",number_of_cores=5,verbose=TRUE)
-TDAexplore <- function(parameters=FALSE,
+#' computation_results <- TDAExplore("parameters.csv",number_of_cores=5,verbose=TRUE)
+TDAExplore <- function(parameters=FALSE,
                        number_of_cores=2,
-                       experiment_name="",
+                       experiment_name=FALSE,
                        image_directories=FALSE,
                        patch_center_image_directories=FALSE,
                        directory_classes=FALSE,
@@ -248,7 +248,11 @@ TDAexplore <- function(parameters=FALSE,
     }
   } 
 
+  remember <- getOption("warn")
+  options(warn=-1)
   image_for_dimensions <- OpenImageR::readImage(image_file_names_by_directory[[1]][1])
+  options(warn=remember)
+
   pixel_area_of_images <- nrow(image_for_dimensions)*ncol(image_for_dimensions)
   patches_per_image <- floor(patch_ratio*pixel_area_of_images/(2*radius_of_patches)**2)
 
@@ -272,7 +276,7 @@ TDAexplore <- function(parameters=FALSE,
     dir.create(data_results_directory)
   }
   ml_results$data_results_directory <- data_results_directory
-  data_name_stem <- paste(experiment_name,patches_per_image,"patches_",radius_of_patches,"radius_",format(Sys.time(), "%b-%d-%S",digits=3),sep = "")
+  data_name_stem <- paste(experiment_name,patches_per_image,"patches_",radius_of_patches,"radius_",format(Sys.time(), "%b-%d-%s",digits=3),sep = "")
   if(upper - lower < 1) { 
     data_name_stem <- paste(data_name_stem,"_radialthresh")
   }
@@ -291,30 +295,30 @@ TDAexplore <- function(parameters=FALSE,
 
   image_name_iterator <- iterators::iter(cbind(unlist(image_file_names_by_directory),unlist(patch_center_file_names_by_directory)),by="row")
 
-  if(!benchmark) {
+  if(benchmark==FALSE) {
     cl <- parallel::makeCluster(number_of_cores,outfile="")
     doParallel::registerDoParallel(cl)
     } else { 
       # Forking using DoMC is picked up by SLURM
       # Only available on Linux
       doMC::registerDoMC(cores=number_of_cores)
-    }
-  `%dopar` <- foreach::`%dopar%`
-  unscrambled_data <- foreach::foreach(image_name=image_name_iterator,.combine=rbind,.packages=c("TDAExplore")) %dopar% { 
+  }
+  `%dopar%` <- foreach::`%dopar%`
+  unscrambled_data <- foreach::foreach(image_name=image_name_iterator,.packages=c("TDAExplore")) %dopar% { 
     options(warn=-1)
     if(verbose) {
-      print(paste("Started image ", image_name))    
+      print(paste("Started image ", image_name[1]))    
       if(image_name[2]!=FALSE) {
         print(paste("With image for patch centers: ",patch_center_image))
       }
     }
-    patch_summaries <- TDAExplore::patch_landscapes_from_image(image_name[1],patches_per_image,patch_center_image=image_name[2],pixel_radius_for_patches = radius_of_patches,proportion_of_patch_sparse=.025,max_PH_threshold=-1,lower_threshold=lower,upper_threshold=upper) 
+    patch_summaries <- TDAExplore::patch_landscapes_from_image(image_name[1],patches_per_image,patch_center_image=image_name[2],pixel_radius_for_patches = radius_of_patches,proportion_of_patch_sparse=.025,lower_threshold=lower,upper_threshold=upper) 
     if(verbose) {
-      print(paste("Finished image ", image_name))    
+      print(paste("Finished image ", image_name[1]))    
     }
     patch_summaries
   }
-  if(!benchmark) {
+  if(benchmark==FALSE) {
     parallel::stopCluster(cl)
   }
 
@@ -330,8 +334,11 @@ TDAexplore <- function(parameters=FALSE,
   
   ml_results$summaries <- unscrambled_data
   ml_results$patch_types <- type_vector
+  ml_results$class_names <- class_names
+  ml_results$patches_per_image <- patches_per_image
+  ml_results$image_file_names <- image_file_names
 
-  if(svm) {
+  if(svm!=FALSE) {
     if(verbose) {
       print("Starting per-landscape SVM")
     }
@@ -360,7 +367,7 @@ TDAexplore <- function(parameters=FALSE,
     trainIndexes <- which(folds==1,arr.ind=TRUE)
 
     # Quick heuristic parameter tuning
-    cost <- heuristicC(as.matrix(shuffled_pca[trainIndexes,]))
+    cost <- LiblineaR::heuristicC(SparseM::as.matrix(shuffled_pca[trainIndexes,]))
 
 
 
@@ -381,8 +388,8 @@ TDAexplore <- function(parameters=FALSE,
     for(i in 1:max(reduced_types)) { 
       proportion_vector[i] <- sum(reduced_types==i)/length(reduced_types)
     }
-    write.csv(data.frame(proportion_vector,row.names=levels(class_names)),file=SVM_file_path,append=FALSE)
-    write.csv(data.frame(proportion_vector,row.names=levels(class_names)),file=SVM_avg_per_patch_file_path,append=FALSE)
+    # write.csv(data.frame(proportion_vector,row.names=levels(class_names)),file=SVM_file_path,append=FALSE)
+    # write.csv(data.frame(proportion_vector,row.names=levels(class_names)),file=SVM_avg_per_patch_file_path,append=FALSE)
 
     reduced_types_unique <- unique(type_vector)
     for(i in 1:number_of_validation_steps) { 
@@ -424,7 +431,7 @@ TDAexplore <- function(parameters=FALSE,
         predicted_names[j] <- paste(predicted_names[j],"_predicted")
       }
       pred_table <- table(factor(prediction_values$predictions,labels=predicted_names,levels=unique(reduced_types)),factor(reduced_types[testIndexes],labels=actual_names,levels=unique(reduced_types)))
-      write.table(pred_table,file=SVM_file_path,sep=",",dec=".",append=TRUE)
+      # write.table(pred_table,file=SVM_file_path,sep=",",dec=".",append=TRUE)
       patch_accuracies[i] <- sum(diag(pred_table))/sum(pred_table)
       
       # Classification with average transformed image data
@@ -445,7 +452,7 @@ TDAexplore <- function(parameters=FALSE,
       trainIndexes <- -testIndexes
 
       # Quick heuristic parameter tuning
-      image_cost <- heuristicC(as.matrix(transformed_data[costIndexes,]))
+      image_cost <- LiblineaR::heuristicC(SparseM::as.matrix(transformed_data[costIndexes,]))
 
       train_data <- as.matrix.csr(transformed_data[trainIndexes,],ncol=1)
       test_data <- as.matrix.csr(transformed_data[testIndexes,],ncol=1)
@@ -478,7 +485,7 @@ TDAexplore <- function(parameters=FALSE,
         predicted_names[j] <- paste(predicted_names[j],"_predicted")
       }
       pred_table <- table(factor(prediction_values$predictions,labels=predicted_names,levels=unique(transformed_types)),factor(transformed_types[testIndexes],labels=actual_names,levels=unique(transformed_types)))
-      write.table(pred_table,file=SVM_avg_per_patch_file_path,sep=",",dec=".",append=TRUE)
+      # write.table(pred_table,file=SVM_avg_per_patch_file_path,sep=",",dec=".",append=TRUE)
       image_accuracies[i] <- sum(diag(pred_table))/sum(pred_table)
       
       ml_results$svm[[i]]$svm_model <- svm_model
