@@ -55,11 +55,23 @@
 #' computed_landscapes <- patch_landscapes_from_image("test/triangles.jpg",10,return_patches=TRUE)
 #' # Where was the center of the 5th patch?
 #' computed_landscapes$patches[[5]]$center
-patch_landscapes_from_image <- function(image_name,number_of_patches,pixel_radius_for_patches=50,number_of_cores=1,patch_center_image=FALSE,return_patches=FALSE,remove_patch_data=TRUE,lower_threshold=0,upper_threshold=1,proportion_of_patch_sparse=.025,noise_threshold=.05,number_of_layers=50) {
+patch_landscapes_from_image <- function(image_name,
+                                        number_of_patches,
+                                        pixel_radius_for_patches=50,
+                                        number_of_cores=1,
+                                        patch_center_image=FALSE,
+                                        return_patches=FALSE,
+                                        remove_patch_data=TRUE,
+                                        lower_threshold=0,
+                                        upper_threshold=1,
+                                        proportion_of_patch_sparse=.025,
+                                        noise_threshold=.05,
+                                        number_of_layers=50) {
   # Derived point samples sizes from parameters
   delta <- 2.5
   spacing_for_disc_points <- delta/2
   
+  remember <- getOption("warn")
   image_data <- OpenImageR::readImage(image_name) 
   if(length(dim(image_data)) > 2) { 
     image_data <- image_data[,,1]
@@ -72,6 +84,9 @@ patch_landscapes_from_image <- function(image_name,number_of_patches,pixel_radiu
 # generate centers
   if(!(patch_center_image==FALSE)) { 
     center_image <- OpenImageR::readImage(patch_center_image)
+    if(length(dim(center_image)) > 2) { 
+      center_image <- center_image[,,1]
+    }
     center_image <- low_pixel_threshold(center_image,noise_threshold)
     image_cdf <- create_cdf_vector(center_image)
     sampling_dims <- dim(center_image)    
@@ -133,7 +148,6 @@ patch_landscapes_from_image <- function(image_name,number_of_patches,pixel_radiu
   }
   
   rval <- landscapes_from_samples(samples,pixel_radius_for_patches,number_of_cores=number_of_cores,number_of_layers=number_of_layers)  
-  print(paste("Finished image",image_name))
   
   if(return_patches==TRUE) { 
     return(list("data"=rval,"patches"=patches,"centroid"=centroid,"centers"=center_points))
@@ -276,7 +290,7 @@ TDAExplore <- function(parameters=FALSE,
     dir.create(data_results_directory)
   }
   ml_results$data_results_directory <- data_results_directory
-  data_name_stem <- paste(experiment_name,patches_per_image,"patches_",radius_of_patches,"radius_",format(Sys.time(), "%b-%d-%s",digits=3),sep = "")
+  data_name_stem <- paste(experiment_name,patches_per_image,"patches_",radius_of_patches,"radius_",format(Sys.time(), "%b-%d-%M",digits=3),sep = "")
   if(upper - lower < 1) { 
     data_name_stem <- paste(data_name_stem,"_radialthresh")
   }
@@ -336,7 +350,9 @@ TDAExplore <- function(parameters=FALSE,
   ml_results$patch_types <- type_vector
   ml_results$class_names <- class_names
   ml_results$patches_per_image <- patches_per_image
+  ml_results$patch_ratio <- patch_ratio
   ml_results$image_file_names <- image_file_names
+  ml_results$radius <- radius_of_patches
 
   if(svm!=FALSE) {
     if(verbose) {
@@ -533,7 +549,13 @@ TDAExplore <- function(parameters=FALSE,
 #' return_list$weights is a vector of the patch scores
 #' @export
 weight_image_using_landscapes_and_transform <- function(image_name,landscape_data,patches,radius,transformation_function=identity,min_weight=0,max_weight=1) { 
+  remember <- getOption("warn")
+  options(warn=-1)
   image_data <- OpenImageR::readImage(image_name)
+  options(warn=remember)
+  if(length(dim(image_data)) > 2) { 
+    image_data <- image_data[,,1]
+  }
   image_data <- low_pixel_threshold(image_data,.05)
   patch_weights <- transformation_function(landscape_data)
   unmod_min_weight <- min(patch_weights)
