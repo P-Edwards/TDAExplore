@@ -290,7 +290,8 @@ TDAExplore <- function(parameters=FALSE,
     dir.create(data_results_directory)
   }
   ml_results$data_results_directory <- data_results_directory
-  data_name_stem <- paste(experiment_name,patches_per_image,"patches_",radius_of_patches,"radius_",format(Sys.time(), "%b-%d-%M",digits=3),sep = "")
+  current_time <- format(Sys.time(), "%b-%d-%M",digits=3)
+  data_name_stem <- paste(experiment_name,"patches_"patch_ratio,"_radius_",radius_of_patches,"_",current_time,sep = "")
   if(upper - lower < 1) { 
     data_name_stem <- paste(data_name_stem,"_radialthresh")
   }
