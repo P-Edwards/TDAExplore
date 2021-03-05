@@ -543,13 +543,14 @@ TDAExplore <- function(parameters=FALSE,
 #' @param patches Patches e.g. like those return from patch_landscapes_for_image(return_patches=TRUE)$patches
 #' @param radius Radius of patches in pixels
 #' @param transformation_function A function which takes as input a matrix and outputs a vector with scores, one for each row in the matrix
+#' @param interval_rep If TRUE, computes the interval representation described below. Default is FALSE.
 #' @return Returns a list return_list with sufficient information to plot the image and its mask.
 #' return_list$image is a matrix with pixel intensities as values
 #' return_list$mask is a matrix of the same dimensions with score intensities as values
 #' return_list$interval_rep is a vector of length 50 which compresses the mask into a radial representation
 #' return_list$weights is a vector of the patch scores
 #' @export
-weight_image_using_landscapes_and_transform <- function(image_name,landscape_data,patches,radius,transformation_function=identity,min_weight=0,max_weight=1) { 
+weight_image_using_landscapes_and_transform <- function(image_name,landscape_data,patches,radius,transformation_function=identity,min_weight=0,max_weight=1,interval_rep=FALSE) { 
   remember <- getOption("warn")
   options(warn=-1)
   image_data <- OpenImageR::readImage(image_name)
@@ -591,35 +592,39 @@ weight_image_using_landscapes_and_transform <- function(image_name,landscape_dat
 
   
 
-  # Compute centroid from base image
+  if(interval_rep) { 
+    # Compute centroid from base image
 
-  # Each 2-entry row in this matrix collects the 
-  # (first_index,second_index) of active pixels
-  on_pixels <- which(image_data!=0,arr.ind=TRUE)
-  centroid <- colSums(on_pixels)/nrow(on_pixels)
-
-
-  # Compute maximum radius from base image + centroid
-  
-  distances_from_centroid <- rdist::cdist(on_pixels,t(centroid))
-  estimated_radius <- max(distances_from_centroid)
-
-  # Compute "percentage mask": "Radius mask"/(max radius)
-  single_dist_from_centroid <- function(i,j) { 
-    diff <- centroid - c(i,j)
-    return(sqrt(diff%*%diff))
-  }
-  percentage_mask <- matrix(mapply(single_dist_from_centroid,row(image_data),col(image_data)),nrow=nrow(image_data),ncol=ncol(image_data))/estimated_radius
+    # Each 2-entry row in this matrix collects the 
+    # (first_index,second_index) of active pixels
+    on_pixels <- which(image_data!=0,arr.ind=TRUE)
+    centroid <- colSums(on_pixels)/nrow(on_pixels)
 
 
-  # Compute "aggregated interval"
-  number_of_intervals <- 50
-  aggregated_output <- vector("double",number_of_intervals)
-  for(i in 1:number_of_intervals) { 
-    lower_threshold <- (i-1)/number_of_intervals
-    upper_threshold <- i/number_of_intervals
-    active_pixels_within_threshold <- which((image_data>0)&(percentage_mask>=lower_threshold)&(percentage_mask<upper_threshold),arr.ind=TRUE)
-    aggregated_output[i] <- sum(total_weight_mask[active_pixels_within_threshold])/length(active_pixels_within_threshold)
+    # Compute maximum radius from base image + centroid
+    
+    distances_from_centroid <- rdist::cdist(on_pixels,t(centroid))
+    estimated_radius <- max(distances_from_centroid)
+
+    # Compute "percentage mask": "Radius mask"/(max radius)
+    single_dist_from_centroid <- function(i,j) { 
+      diff <- centroid - c(i,j)
+      return(sqrt(diff%*%diff))
+    }
+    percentage_mask <- matrix(mapply(single_dist_from_centroid,row(image_data),col(image_data)),nrow=nrow(image_data),ncol=ncol(image_data))/estimated_radius
+
+
+    # Compute "aggregated interval"
+    number_of_intervals <- 50
+    aggregated_output <- vector("double",number_of_intervals)
+    for(i in 1:number_of_intervals) { 
+      lower_threshold <- (i-1)/number_of_intervals
+      upper_threshold <- i/number_of_intervals
+      active_pixels_within_threshold <- which((image_data>0)&(percentage_mask>=lower_threshold)&(percentage_mask<upper_threshold),arr.ind=TRUE)
+      aggregated_output[i] <- sum(total_weight_mask[active_pixels_within_threshold])/length(active_pixels_within_threshold)
+    }
+  } else { 
+    aggregated_output <- 0
   }
 
   return(list("image"=rotate(image_data),"mask"=rotate(total_weight_mask),"min"=unmod_min_weight,"max"=unmod_max_weight,"weights"=unmod_weights,interval_rep=aggregated_output))
