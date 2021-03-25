@@ -11,7 +11,8 @@ weight_image_using_landscapes_and_transform(
   radius,
   transformation_function = identity,
   min_weight = 0,
-  max_weight = 1
+  max_weight = 1,
+  interval_rep = FALSE
 )
 }
 \arguments{
@@ -25,6 +26,8 @@ weight_image_using_landscapes_and_transform(
 \item{radius}{Radius of patches in pixels}
 
 \item{transformation_function}{A function which takes as input a matrix and outputs a vector with scores, one for each row in the matrix}
+
+\item{interval_rep}{If TRUE, computes the interval representation described below. Default is FALSE.}
 }
 \value{
 Returns a list return_list with sufficient information to plot the image and its mask.

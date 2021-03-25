@@ -12,6 +12,7 @@ patch_landscapes_from_image(
   patch_center_image = FALSE,
   return_patches = FALSE,
   remove_patch_data = TRUE,
+  return_samples = FALSE,
   lower_threshold = 0,
   upper_threshold = 1,
   proportion_of_patch_sparse = 0.025,
@@ -38,6 +39,10 @@ image_landscape_results$patches is a list of patch objects (in the same order as
 original image for each patch. Default is FALSE, in which case output is described in Value below.}
 
 \item{remove_patch_data}{If set to FALSE and return_patches is TRUE, the patch details also include the raw subset of the image comprising each patch.
+Useful for some imaging tasks. WARNING: Memory costs can quickly get out of hand when setting this to TRUE. Default is FALSE, in which case such data
+is not retained.}
+
+\item{return_samples}{If set to TRUE and return_patches is TRUE, will also append the samples to each patch entry. Default is FALSE.
 Useful for some imaging tasks. WARNING: Memory costs can quickly get out of hand when setting this to TRUE. Default is FALSE, in which case such data
 is not retained.}
 

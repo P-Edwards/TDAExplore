@@ -36,6 +36,9 @@
 #' @param remove_patch_data If set to FALSE and return_patches is TRUE, the patch details also include the raw subset of the image comprising each patch. 
 #' Useful for some imaging tasks. WARNING: Memory costs can quickly get out of hand when setting this to TRUE. Default is FALSE, in which case such data
 #' is not retained.
+#' @param return_samples If set to TRUE and return_patches is TRUE, will also append the samples to each patch entry. Default is FALSE.
+#' Useful for some imaging tasks. WARNING: Memory costs can quickly get out of hand when setting this to TRUE. Default is FALSE, in which case such data
+#' is not retained.
 #' @param noise_threshold A number between 0 or 1 representing a percentage. The bottom noise_threshold pixels in the image by intensity will be set to 0. 
 #' Used to eliminate small intensity background noise. Default is .05, i.e. 5%. 
 #' @param number_of_layers For TDA experts: the maximum landscape Lambda_{number_of_layers} to compute. Default is 50.
@@ -62,6 +65,7 @@ patch_landscapes_from_image <- function(image_name,
                                         patch_center_image=FALSE,
                                         return_patches=FALSE,
                                         remove_patch_data=TRUE,
+                                        return_samples=FALSE,
                                         lower_threshold=0,
                                         upper_threshold=1,
                                         proportion_of_patch_sparse=.025,
@@ -125,10 +129,8 @@ patch_landscapes_from_image <- function(image_name,
   # generate patches
   mask <- create_disc_mask(pixel_radius_for_patches)
   patches <- list()
-  average_intensities <- vector("double",ncol(center_points))
   for(i in 1:ncol(center_points)) { 
     patches[[i]] <- get_patch_from_point_and_mask(image_data,center_points[,i],mask)
-    average_intensities[i] <- sum(patches[[i]]$data)/sum(which(patches[[i]]$data>0))
   }
   
 
@@ -150,6 +152,11 @@ patch_landscapes_from_image <- function(image_name,
   rval <- landscapes_from_samples(samples,pixel_radius_for_patches,number_of_cores=number_of_cores,number_of_layers=number_of_layers)  
   
   if(return_patches==TRUE) { 
+    if(return_samples==TRUE) { 
+      for(i in 1:number_of_patches) { 
+        patches[[i]]$sample <- samples[[i]]
+      }
+    }
     return(list("data"=rval,"patches"=patches,"centroid"=centroid,"centers"=center_points))
   } else { 
     return(rval)
@@ -175,6 +182,7 @@ patch_landscapes_from_image <- function(image_name,
 #' @param patch_ratio The number of patches sampled per image will be patch_ratio*(PIXEL AREA OF IMAGE)/(PIXEL AREA OF SINGLE PATCH). Default is 2.
 #' @param svm If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image. 
 #' @param verbose If set to TRUE, outputs some progress information using print. Default is FALSE.
+#' @param lower Experimental, leave default. 
 #' @param benchmark If set to TRUE, uses a fork cluster type which is more easily trackable by benchmarking software. Does nothing on Windows. Default is FALSE.
 #' @param lower Experimental, leave default. 
 #' @param upper Experimental, leave default.
@@ -201,6 +209,7 @@ TDAExplore <- function(parameters=FALSE,
                        patch_ratio=2,
                        svm=FALSE,
                        verbose=FALSE,
+                       proportion=.025,
                        benchmark=FALSE,
                        lower=0,
                        upper=1) { 
@@ -267,8 +276,8 @@ TDAExplore <- function(parameters=FALSE,
   image_for_dimensions <- OpenImageR::readImage(image_file_names_by_directory[[1]][1])
   options(warn=remember)
 
-  pixel_area_of_images <- nrow(image_for_dimensions)*ncol(image_for_dimensions)
-  patches_per_image <- floor(patch_ratio*pixel_area_of_images/(2*radius_of_patches)**2)
+  pixel_area_of_images <- sum(low_pixel_threshold(image_for_dimensions,.05))
+  patches_per_image <- max(floor(patch_ratio*pixel_area_of_images/(2*radius_of_patches)**2),1)
 
   if(experiment_name==FALSE) {
     if("experiment_name" %in% provided_parameters) {
@@ -327,7 +336,7 @@ TDAExplore <- function(parameters=FALSE,
         print(paste("With image for patch centers: ",patch_center_image))
       }
     }
-    patch_summaries <- TDAExplore::patch_landscapes_from_image(image_name[1],patches_per_image,patch_center_image=image_name[2],pixel_radius_for_patches = radius_of_patches,proportion_of_patch_sparse=.025,lower_threshold=lower,upper_threshold=upper) 
+    patch_summaries <- TDAExplore::patch_landscapes_from_image(image_name[1],patches_per_image,patch_center_image=image_name[2],pixel_radius_for_patches = radius_of_patches,proportion_of_patch_sparse=proportion,lower_threshold=lower,upper_threshold=upper) 
     if(verbose) {
       print(paste("Finished image ", image_name[1]))    
     }
