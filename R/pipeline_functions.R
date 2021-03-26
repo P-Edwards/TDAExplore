@@ -274,13 +274,10 @@ TDAExplore <- function(parameters=FALSE,
   remember <- getOption("warn")
   options(warn=-1)
   image_for_dimensions <- OpenImageR::readImage(image_file_names_by_directory[[1]][1])
-  if(length(dim(image_for_dimensions))>2) { 
-    image_for_dimensions <- image_for_dimensions[,,1]
-  }
   options(warn=remember)
 
-  pixel_area_of_images <- sum(low_pixel_threshold(image_for_dimensions,.05)!=0)
-  patches_per_image <- max(floor(patch_ratio*pixel_area_of_images/(pi*(radius_of_patches)**2)),1)
+  pixel_area_of_images <- sum(low_pixel_threshold(image_for_dimensions,.05))
+  patches_per_image <- max(floor(patch_ratio*pixel_area_of_images/(2*radius_of_patches)**2),1)
 
   if(experiment_name==FALSE) {
     if("experiment_name" %in% provided_parameters) {
