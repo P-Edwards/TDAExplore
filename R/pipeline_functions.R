@@ -640,5 +640,35 @@ weight_image_using_landscapes_and_transform <- function(image_name,landscape_dat
 }
 
 
+image_demonstrator <- function(image_name,
+                               number_of_patches,
+                               pixel_radius_for_patches=50,
+                               number_of_cores=1,
+                               proportion_of_patch_sparse=.025,
+                               noise_threshold=.05,
+                               number_of_layers=50) { 
 
+  # Generate patches and landscapes with all info attached
+  base_information <- patch_landscapes_from_image(image_name,number_of_patches,pixel_radius_for_patches,number_of_cores,FALSE,TRUE,FALSE,TRUE,0,1,proportion_of_patch_sparse,noise_threshold,number_of_layers)
 
+  # Plot original image with transparent discs over patch locations
+  original_image <- OpenImageR::readImage(image_name)
+  if(length(dim(original_image))>2) {
+    original_image <- original_image[,,1]
+  }
+  mask <- matrix(FALSE,nrow=nrow(original_image),ncol=ncol(original_image))
+  disc <- create_disc_mask(pixel_radius_for_patches)
+  for(i in 1:length(base_information$patches)) { 
+    this_patch <- base_information$patches[[i]]
+    mask[(this_patch$xmin:this_patch$xmax),(this_patch$ymin:this_patch$ymax)] <- disc[1:nrow(this_patch$data),1:ncol(this_patch$data)]
+  }
+  par(mar=c(0,0,0,0)); 
+  image(rotate(original_image),col=gray.colors(70000,start = 0.0),zlim=c(0,max(original_image)),axes=FALSE) 
+  image(rotate(mask),zlim=c(1e-3,1),col=colorspace::divergingx_hcl(2,palette = "RdBu",alpha=.60,rev=TRUE),add=TRUE)
+
+  # Plot patch samples and PD's
+  for(i in 1:length(base_information$patches)) { 
+    this_patch_sample <- base_information$patches[[i]]$sample
+    plot(this_patch_sample[1,],this_patch_sample[2,])
+  }
+}

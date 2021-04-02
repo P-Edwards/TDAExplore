@@ -20,8 +20,9 @@
 
 # Added by Peter Bubenik May 3, 2020; updated with C++ versions Parker Edwards May 9
 sample_patch_using_top_intensities_sparse <- function(patch,proportion_of_patch_sparse=.025,exclusion_disc_data=create_disc_mask(2.5)) { 
-  number_of_pixels_to_sample <- ceiling( sum(patch$data != 0) * proportion_of_patch_sparse )
-  pixels_in_order <- order(patch$data,decreasing=TRUE)
+  nonzero_pixels <- sum(patch$data != 0)
+  number_of_pixels_to_sample <- ceiling( nonzero_pixels * proportion_of_patch_sparse )
+  pixels_in_order <- order(patch$data,decreasing=TRUE)[1:nonzero_pixels]
   return(sparse_patch_top_intensities(pixels_in_order,number_of_pixels_to_sample,nrow(patch$data),ncol(patch$data),exclusion_disc_data))
 }
 
