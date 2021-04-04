@@ -355,7 +355,7 @@ TDAExplore <- function(parameters=FALSE,
   }
 
   if(pca!=FALSE) { 
-    ml_results$landscapes_svd <- RSpectra::svds(SparseM::as.matrix(unscrambled_data),k=2000,nu=0,nv=2000,center=FALSE,scale=FALSE,tol=NULL)
+    ml_results$landscapes_svd <- RSpectra::svds(SparseM::as.matrix(unscrambled_data),k=1000,nu=0,nv=1000,center=FALSE,scale=FALSE,tol=NULL)
     unscrambled_data <- SparseM::as.matrix(unscrambled_data)%*%(ml_results$landscapes_svd$v)
     unscrambled_data <- scale(unscrambled_data)
   }
@@ -374,6 +374,13 @@ TDAExplore <- function(parameters=FALSE,
   if(svm!=FALSE) {
     if(verbose) {
       print("Starting per-landscape SVM")
+    }
+    if(pca!=FALSE) { 
+      # Sets run type to L1 regularized
+      svm_run_type <- 5
+    } else { 
+      # If not projected, use primal L2 regularized + loss
+      svm_run_type <- 2
     }
     ml_results$svm <- list()
 
@@ -450,7 +457,7 @@ TDAExplore <- function(parameters=FALSE,
         train_data[switch_index,] <- train_data[1,]
         train_data[1,] <- temporary_row
       }
-      svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(reduced_types_training),wi=weights,cost=cost,type=2)
+      svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(reduced_types_training),wi=weights,cost=cost,type=svm_run_type)
 
       ml_results$svm[[i]] <- list()
       ml_results$svm[[i]]$testing_data <- reduced_data[testIndexes,]
@@ -509,7 +516,7 @@ TDAExplore <- function(parameters=FALSE,
         train_data[switch_index,] <- train_data[1,]
         train_data[1,] <- temporary_row
       }
-      image_svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(transformed_types_training),cost=image_cost,wi=weights,type=2)
+      image_svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(transformed_types_training),cost=image_cost,wi=weights,type=svm_run_type)
       prediction_values <- predict(image_svm_model,test_data)
       actual_names <- levels(class_names)
       predicted_names <- levels(class_names)
