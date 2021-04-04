@@ -181,6 +181,7 @@ patch_landscapes_from_image <- function(image_name,
 #' @param radius_of_patches Pixel radius of patches. Default is 50 pixels.
 #' @param patch_ratio The number of patches sampled per image will be patch_ratio*(PIXEL AREA OF IMAGE)/(PIXEL AREA OF SINGLE PATCH). Default is 2.
 #' @param svm If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image. 
+#' @param folds The number of folds to use in SVM cross-validation. The default is 5.
 #' @param pca If set to TRUE, transforms landscapes after computation by projecting onto first 50 PC's, then scaling. Default is FALSE.
 #' @param verbose If set to TRUE, outputs some progress information using print. Default is FALSE.
 #' @param lower Experimental, leave default. 
@@ -209,6 +210,7 @@ TDAExplore <- function(parameters=FALSE,
                        radius_of_patches=FALSE,
                        patch_ratio=2,
                        svm=FALSE,
+                       folds=5,
                        pca=FALSE,
                        verbose=FALSE,
                        proportion=.025,
@@ -385,7 +387,7 @@ TDAExplore <- function(parameters=FALSE,
     ml_results$svm <- list()
 
     # Cross validation on PCA-rotated patch landscapes
-    number_of_validation_steps <- 5
+    number_of_validation_steps <- folds
     
     #randomly shuffle the data
     shuffled_order <- sample(length(image_file_names))
