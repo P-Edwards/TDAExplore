@@ -181,6 +181,7 @@ patch_landscapes_from_image <- function(image_name,
 #' @param radius_of_patches Pixel radius of patches. Default is 50 pixels.
 #' @param patch_ratio The number of patches sampled per image will be patch_ratio*(PIXEL AREA OF IMAGE)/(PIXEL AREA OF SINGLE PATCH). Default is 2.
 #' @param svm If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image. 
+#' @param pca If set to TRUE, transforms landscapes after computation by projecting onto first 50 PC's, then scaling. Default is FALSE.
 #' @param verbose If set to TRUE, outputs some progress information using print. Default is FALSE.
 #' @param lower Experimental, leave default. 
 #' @param benchmark If set to TRUE, uses a fork cluster type which is more easily trackable by benchmarking software. Does nothing on Windows. Default is FALSE.
@@ -208,6 +209,7 @@ TDAExplore <- function(parameters=FALSE,
                        radius_of_patches=FALSE,
                        patch_ratio=2,
                        svm=FALSE,
+                       pca=FALSE,
                        verbose=FALSE,
                        proportion=.025,
                        benchmark=FALSE,
@@ -352,6 +354,11 @@ TDAExplore <- function(parameters=FALSE,
     unscrambled_data <- as.matrix.csr(do.call(rbind,unscrambled_data))
   }
 
+  if(pca!=FALSE) { 
+    ml_results$landscapes_svd <- RSpectra::svds(SparseM::as.matrix(unscrambled_data),k=50,nu=0,nv=50,center=FALSE,scale=FALSE,tol=NULL)
+    unscrambled_data <- unscrambled_data%*%(ml_results$landscapes_svd$v)
+    unscrambled_data <- scale(unscrambled_data)
+  }
 
   image_file_names <- unlist(image_file_names_by_directory)
 
