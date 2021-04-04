@@ -355,7 +355,7 @@ TDAExplore <- function(parameters=FALSE,
   }
 
   if(pca!=FALSE) { 
-    ml_results$landscapes_svd <- RSpectra::svds(SparseM::as.matrix(unscrambled_data),k=1000,nu=0,nv=1000,center=FALSE,scale=FALSE,tol=NULL)
+    ml_results$landscapes_svd <- RSpectra::svds(SparseM::as.matrix(unscrambled_data),k=0,nu=0,nv=2000,center=FALSE,scale=FALSE,tol=NULL)
     unscrambled_data <- SparseM::as.matrix(unscrambled_data)%*%(ml_results$landscapes_svd$v)
     unscrambled_data <- scale(unscrambled_data)
   }
