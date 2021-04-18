@@ -117,7 +117,7 @@ average_vectors_for_images <- function(data_matrix,number_of_patches,names_list,
     if(number_of_patches > 1) {
       image_weights[i,] <- averaging_function(SparseM::as.matrix(weights[(1+number_of_patches*(i-1)):(number_of_patches*i),]))[1:number_of_dimensions]    
     } else { 
-      image_weights[i,] <- weights[i,]
+      image_weights[i,] <- weights[i,1:number_of_dimensions]
     }
     image_types[i] <- types_list[1+(i-1)*number_of_patches]
   }

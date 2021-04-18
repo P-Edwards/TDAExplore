@@ -181,7 +181,8 @@ patch_landscapes_from_image <- function(image_name,
 #' @param radius_of_patches Pixel radius of patches. Default is 50 pixels.
 #' @param patch_ratio The number of patches sampled per image will be patch_ratio*(PIXEL AREA OF IMAGE)/(PIXEL AREA OF SINGLE PATCH). Default is 2.
 #' @param svm If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image. 
-#' @param folds The number of folds to use in SVM cross-validation. The default is 5.
+#' @param randforest Experimental. If set to TRUE, trains and tests random forest model. Supports multiclass. Could take prohitively long if --pca is not TRUE. Default is FALSE.
+#' @param number_of_folds The number of folds to use in SVM cross-validation. The default is 5.
 #' @param pca If set to TRUE, transforms landscapes after computation by projecting onto first 50 PC's, then scaling. Default is FALSE.
 #' @param verbose If set to TRUE, outputs some progress information using print. Default is FALSE.
 #' @param lower Experimental, leave default. 
@@ -210,8 +211,9 @@ TDAExplore <- function(parameters=FALSE,
                        radius_of_patches=FALSE,
                        patch_ratio=2,
                        svm=FALSE,
-                       folds=5,
-                       pca=FALSE,
+                       randforest=FALSE,
+                       number_of_folds=5,
+                       pca=FALSE,                  
                        verbose=FALSE,
                        proportion=.025,
                        benchmark=FALSE,
@@ -387,7 +389,7 @@ TDAExplore <- function(parameters=FALSE,
     ml_results$svm <- list()
 
     # Cross validation on PCA-rotated patch landscapes
-    number_of_validation_steps <- folds
+    number_of_validation_steps <- number_of_folds
     
     #randomly shuffle the data
     shuffled_order <- sample(length(image_file_names))
@@ -430,8 +432,7 @@ TDAExplore <- function(parameters=FALSE,
     for(i in 1:max(reduced_types)) { 
       proportion_vector[i] <- sum(reduced_types==i)/length(reduced_types)
     }
-    # write.csv(data.frame(proportion_vector,row.names=levels(class_names)),file=SVM_file_path,append=FALSE)
-    # write.csv(data.frame(proportion_vector,row.names=levels(class_names)),file=SVM_avg_per_patch_file_path,append=FALSE)
+
 
     reduced_types_unique <- unique(type_vector)
     for(i in 1:number_of_validation_steps) { 
@@ -527,7 +528,6 @@ TDAExplore <- function(parameters=FALSE,
         predicted_names[j] <- paste(predicted_names[j],"_predicted")
       }
       pred_table <- table(factor(prediction_values$predictions,labels=predicted_names,levels=unique(transformed_types)),factor(transformed_types[testIndexes],labels=actual_names,levels=unique(transformed_types)))
-      # write.table(pred_table,file=SVM_avg_per_patch_file_path,sep=",",dec=".",append=TRUE)
       image_accuracies[i] <- sum(diag(pred_table))/sum(pred_table)
       
       ml_results$svm[[i]]$svm_model <- svm_model
@@ -539,8 +539,6 @@ TDAExplore <- function(parameters=FALSE,
       ml_results$svm[[i]]$svm_cost <- cost 
     }
 
-    # write.table(table(patch_accuracies),file=SVM_file_path,append=TRUE,sep=",",dec=".")
-    # write.table(table(c(mean(patch_accuracies))),file=SVM_file_path,append=TRUE,sep=",",dec=".")
     if(verbose) {
       print("Radius")
       print(radius_of_patches)
@@ -549,10 +547,104 @@ TDAExplore <- function(parameters=FALSE,
       print("Average image accuracies")
       print(mean(image_accuracies))
     }
-    # write.table(table(image_accuracies),file=SVM_avg_per_patch_file_path,append=TRUE,sep=",",dec=".")
-    # write.table(table(c(mean(image_accuracies))),file=SVM_avg_per_patch_file_path,append=TRUE,sep=",",dec=".")
+    
+  }
+  if(randforest!=FALSE) {
+    if(verbose) {
+      print("Starting per-landscape random forest")
+    }
+    ml_results$rand_forest <- list()
+
+    # Cross validation on PCA-rotated patch landscapes
+    number_of_validation_steps <- number_of_folds
+    
+    #randomly shuffle the data
+    shuffled_order <- sample(length(image_file_names))
+    shuffled_image_names <- image_file_names[shuffled_order]
+
+    shuffled_patch_indices <- vector(mode="double",length=length(type_vector))
+    image_folds <- cut(seq(1,length(shuffled_image_names)),breaks=number_of_validation_steps,labels=FALSE)
+    folds <- vector(mode="double",length=length(type_vector))
+    for(i in 1:length(shuffled_order)) { 
+      image_index <- shuffled_order[i]
+      shuffled_patch_indices[((i-1)*patches_per_image+1):(i*patches_per_image)] <- ((image_index-1)*patches_per_image+1):(image_index*patches_per_image)
+      folds[((i-1)*patches_per_image+1):(i*patches_per_image)] <- image_folds[i]
+    }
+
+    # Now do cross validation with the remaining data and selected parameters
+    reduced_data <- unscrambled_data[shuffled_patch_indices,]
+    reduced_types <- type_vector[shuffled_patch_indices]
+
+
+    patch_accuracies <- vector("double",number_of_validation_steps)
+    image_accuracies <- vector("double",number_of_validation_steps)
+
+    reduced_types_unique <- unique(type_vector)
+    for(i in 1:number_of_validation_steps) { 
+      if(verbose) {
+        print(paste("Starting random forest cross validation fold number ",i))
+      }
+      testIndexes <- which(folds==i,arr.ind=TRUE)
+      trainIndexes <- -testIndexes
+      reduced_types_training <- reduced_types[trainIndexes]
+      train_data <- SparseM::as.matrix(reduced_data[trainIndexes,])
+
+
+      rf_model <- randomForest::randomForest(train_data,y=factor(reduced_types_training,levels=unique(type_vector),labels=levels(class_names)))
+
+      ml_results$rand_forest[[i]] <- list()
+      ml_results$rand_forest[[i]]$testing_data <- SparseM::as.matrix(reduced_data[testIndexes,])
+      ml_results$rand_forest[[i]]$testing_labels <- reduced_types[testIndexes]
+      
+      prediction_values <- predict(rf_model,SparseM::as.matrix(reduced_data[testIndexes,]))
+      actual_names <- levels(class_names)
+      predicted_names <- levels(class_names)
+      for(j in 1:length(actual_names)) { 
+        actual_names[j] <- paste(actual_names[j],"_actual")
+        predicted_names[j] <- paste(predicted_names[j],"_predicted")
+      }
+      pred_table <- table(prediction_values,factor(reduced_types[testIndexes],labels=actual_names,levels=unique(type_vector)))
+      patch_accuracies[i] <- sum(diag(pred_table))/sum(pred_table)
+      
+      # Classifiction with average probability vectors: 
+      # Predict class probabilities for each testing patch, then 
+      # take an average over all patches in each testing image. 
+      # Highest average probability wins the image.
+      
+      patch_probability_predictions <- predict(rf_model,SparseM::as.matrix(reduced_data[testIndexes,]),type="prob")
+      number_of_classes <- ncol(patch_probability_predictions)   
+
+      named_types <- factor(reduced_types[testIndexes],levels = unique(type_vector),labels=levels(class_names))
+
+      image_probability_predictions <- average_vectors_for_images(patch_probability_predictions,patches_per_image,levels(class_names),as.character(named_types),1,number_of_classes)
+      prediction_values <- vector("character",length=nrow(image_probability_predictions$image_weights))
+      for(j in 1:length(prediction_values)) { 
+        prediction_values[j] <- class_names[which.max(image_probability_predictions$image_weights[j,])]
+      }
+      prediction_values <- factor(prediction_values,levels=unique(type_vector),labels=predicted_names)
+
+      image_pred_table <- table(prediction_values,factor(image_probability_predictions$image_types,levels=levels(class_names),labels=actual_names))
+      image_accuracies[i] <- sum(diag(image_pred_table))/sum(image_pred_table)
+      
+      ml_results$rand_forest[[i]]$image_predictions <- prediction_values
+      ml_results$rand_forest[[i]]$ground_values <- image_probability_predictions$image_types
+      ml_results$rand_forest[[i]]$rf_model <- rf_model      
+      ml_results$rand_forest[[i]]$rf_image_training_indices <- shuffled_order[trainIndexes]
+      ml_results$rand_forest[[i]]$rf_patch_accuracies <- patch_accuracies
+      ml_results$rand_forest[[i]]$rf_image_accuracies <- image_accuracies      
+    }
+    
+    if(verbose) {
+      print("Radius")
+      print(radius_of_patches)
+      print("Average RF patch accuracies")
+      print(mean(patch_accuracies))
+      print("Average RF image accuracies")
+      print(mean(image_accuracies))
+    }    
 
   }
+
   return(ml_results)
 }
 
