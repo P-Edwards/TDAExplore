@@ -12,7 +12,7 @@ Encoding: UTF-8
 LazyData: true
 License: GPL (>= 3)
 Imports: Rcpp (>= 1.0.6), methods, foreach, doParallel, TDA, iterators, SparseM, OpenImageR, rdist, stats
-Suggests: LiblineaR, doMC, RSpectra
+Suggests: LiblineaR, doMC, RSpectra, randomForest
 LinkingTo: Rcpp
 Depends: R (>= 3.6.3)
 Roxygen: list(markdown = TRUE)

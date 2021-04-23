@@ -283,7 +283,7 @@ TDAExplore <- function(parameters=FALSE,
   options(warn=remember)
 
   pixel_area_of_images <- nrow(image_for_dimensions)*ncol(image_for_dimensions)
-  patches_per_image <- max(floor(patch_ratio*pixel_area_of_images/(pi*(radius_of_patches)**2)),1)
+  patches_per_image <- max(floor(patch_ratio*pixel_area_of_images/(pi*(radius_of_patches)**2)),2)
 
   if(experiment_name==FALSE) {
     if("experiment_name" %in% provided_parameters) {
@@ -353,7 +353,8 @@ TDAExplore <- function(parameters=FALSE,
   }
 
   if(length(type_vector)>=2147483647) { 
-    unscrambled_data <- as.matrix(do.call(rbind,unscrambled_data))
+    warning("There are more patches in your data set than the maximum supported by sparse matrices (2147483647 patches is the max). Continuing, but memory costs will be significantly higher.")
+    unscrambled_data <- SparseM::as.matrix(do.call(rbind,unscrambled_data))
   } else { 
     unscrambled_data <- as.matrix.csr(do.call(rbind,unscrambled_data))
   }
