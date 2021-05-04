@@ -219,7 +219,7 @@ TDAExplore <- function(parameters=FALSE,
                        benchmark=FALSE,
                        lower=0,
                        upper=1) { 
-  data_parameters <- utils::read.csv(parameters,stringsAsFactors=TRUE)
+  data_parameters <- utils::read.csv(parameters,stringsAsFactors=FALSE)
   provided_parameters <- colnames(data_parameters)
   ml_results <- list()
 
@@ -235,6 +235,11 @@ TDAExplore <- function(parameters=FALSE,
     class_names <- directory_classes
   } else if("directory_classes" %in% provided_parameters) { 
     class_names <- data_parameters[,"directory_classes"]
+    # Have to be very careful with the factor call here: 
+    # Default is levels=sort(unique(class_names)), which 
+    # screws up ordering assumptions level if user
+    # inputs classes in non-alphabetical order
+    class_names <- factor(class_names,levels=unique(class_names),labels=unique(class_names))
   } else { 
     warning("No classes for directory specified, using directory names as a default.")
     class_names <- image_type_names
@@ -255,7 +260,7 @@ TDAExplore <- function(parameters=FALSE,
 
   total_number_of_files <- 0
   for(i in 1:length(image_type_names)) { 
-    image_file_names_by_directory[[i]] <- list.files(levels(image_type_names)[image_type_names[i]],full.names=TRUE)
+    image_file_names_by_directory[[i]] <- list.files(image_type_names[i],full.names=TRUE)
     if(patch_center_flag) { 
       patch_center_file_names_by_directory[[i]] <- list.files(levels(patch_center_names)[patch_center_names[i]],full.names=TRUE)
     } else { 
