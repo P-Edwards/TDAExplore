@@ -180,8 +180,9 @@ patch_landscapes_from_image <- function(image_name,
 #' for saving, the user must save the results themselves if desired. ./tda_explores_results is the default.
 #' @param radius_of_patches Pixel radius of patches. Default is 50 pixels.
 #' @param patch_ratio The number of patches sampled per image will be patch_ratio*(PIXEL AREA OF IMAGE)/(PIXEL AREA OF SINGLE PATCH). Default is 2.
-#' @param svm If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image. 
-#' @param randforest Experimental. If set to TRUE, trains and tests random forest model. Supports multiclass. Could take prohitively long if --pca is not TRUE. Default is FALSE.
+#' @param svm If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image. Default is FALSE.
+#' @param multisvm If set to TRUE, trains and tests multi-class SVM. If set to FALSE, only computes landscapes for each image. 
+#' @param randforest If set to TRUE, trains and tests random forest model. Supports multiclass. Could take prohitively long if --pca is not TRUE. Default is FALSE.
 #' @param number_of_folds The number of folds to use in SVM cross-validation. The default is 5.
 #' @param pca If set to TRUE, transforms landscapes after computation by projecting onto first 50 PC's, then scaling. Default is FALSE.
 #' @param verbose If set to TRUE, outputs some progress information using print. Default is FALSE.
@@ -211,7 +212,8 @@ TDAExplore <- function(parameters=FALSE,
                        radius_of_patches=FALSE,
                        patch_ratio=2,
                        svm=FALSE,
-                       randforest=FALSE,
+                       multisvm=FALSE,
+                       randforest=FALSE,                       
                        number_of_folds=5,
                        pca=FALSE,                  
                        verbose=FALSE,
@@ -543,6 +545,152 @@ TDAExplore <- function(parameters=FALSE,
       ml_results$svm[[i]]$svm_patch_accuracies <- patch_accuracies
       ml_results$svm[[i]]$svm_image_accuracies <- image_accuracies
       ml_results$svm[[i]]$svm_cost <- cost 
+    }
+
+    if(verbose) {
+      print("Radius")
+      print(radius_of_patches)
+      print("Average patch accuracies")
+      print(mean(patch_accuracies))
+      print("Average image accuracies")
+      print(mean(image_accuracies))
+    }
+    
+  }
+  if(multisvm!=FALSE) {
+    if(verbose) {
+      print("Starting per-landscape SVM")
+    }
+
+    svm_run_type <- 2
+    ml_results$multisvm <- list()
+
+    # Cross validation on PCA-rotated patch landscapes
+    number_of_validation_steps <- number_of_folds
+    
+    #randomly shuffle the data
+    shuffled_order <- sample(length(image_file_names))
+    shuffled_image_names <- image_file_names[shuffled_order]
+
+    shuffled_patch_indices <- vector(mode="double",length=length(type_vector))
+    image_folds <- cut(seq(1,length(shuffled_image_names)),breaks=number_of_validation_steps,labels=FALSE)
+    folds <- vector(mode="double",length=length(type_vector))
+    for(i in 1:length(shuffled_order)) { 
+      image_index <- shuffled_order[i]
+      shuffled_patch_indices[((i-1)*patches_per_image+1):(i*patches_per_image)] <- ((image_index-1)*patches_per_image+1):(image_index*patches_per_image)
+      folds[((i-1)*patches_per_image+1):(i*patches_per_image)] <- image_folds[i]
+    }
+
+    # First: Use 20% of the data to tune SVM parameters.  
+
+    shuffled_pca <- unscrambled_data[shuffled_patch_indices,]
+    shuffled_types <- type_vector[shuffled_patch_indices]
+    trainIndexes <- which(folds==1,arr.ind=TRUE)
+
+    # Quick heuristic parameter tuning
+    cost <- LiblineaR::heuristicC(SparseM::as.matrix(shuffled_pca[trainIndexes,]))
+
+
+
+    # Now do cross validation with the remaining data and selected parameters
+    reduced_data <- shuffled_pca
+    reduced_types <- shuffled_types
+    reduced_types_unique <- unique(type_vector)
+
+    shuffled_pca <- NULL
+    shuffled_types <- NULL
+    gc()
+
+    patch_accuracies <- vector("double",number_of_validation_steps)
+    image_accuracies <- vector("double",number_of_validation_steps)
+
+    
+    for(i in 1:number_of_validation_steps) { 
+      if(verbose) {
+        print(paste("Starting cross validation fold number ",i))
+      }
+      testIndexes <- which(folds==i,arr.ind=TRUE)
+      trainIndexes <- -testIndexes
+      weights <- vector(mode="double",length=length(unique(reduced_types[trainIndexes])))
+      names(weights) <- levels(class_names)          
+      for(j in 1:length(weights)) { 
+        weights[j] <- sum(reduced_types[trainIndexes]==unique(type_vector)[j])
+      }
+      max_number <- max(weights)
+      for(j in 1:length(weights)) { 
+        weights[j] <- max_number/weights[j]
+      }
+      reduced_types_training <- reduced_types[trainIndexes]
+      train_data <- reduced_data[trainIndexes,]
+      svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(reduced_types_training,levels=unique(type_vector),labels=levels(class_names)),wi=weights,cost=cost,type=svm_run_type)
+
+      
+      ml_results$multisvm[[i]] <- list()
+      ml_results$multisvm[[i]]$testing_data <- reduced_data[testIndexes,]
+      ml_results$multisvm[[i]]$testing_labels <- reduced_types[testIndexes]
+      
+
+      prediction_values <- predict(svm_model,SparseM::as.matrix(reduced_data[testIndexes,]))$predictions
+      
+      actual_names <- levels(class_names)
+      predicted_names <- levels(class_names)
+      for(j in 1:length(actual_names)) { 
+        actual_names[j] <- paste(actual_names[j],"_actual")
+        predicted_names[j] <- paste(predicted_names[j],"_predicted")
+      }
+      pred_table <- table(prediction_values,factor(reduced_types[testIndexes],labels=actual_names,levels=unique(type_vector)))
+      patch_accuracies[i] <- sum(diag(pred_table))/sum(pred_table)
+      
+      # Classifiction with average probability vectors: 
+      # Predict class probabilities for each testing patch, then 
+      # take an average over all patches in each testing image. 
+      # Highest average probability wins the image.
+      
+      patch_probability_predictions <- predict(svm_model,SparseM::as.matrix(reduced_data),decisionValues=TRUE)$decisionValues
+
+      
+      number_of_classes <- ncol(patch_probability_predictions)   
+
+      named_types <- factor(reduced_types[testIndexes],levels = unique(type_vector),labels=levels(class_names))
+
+      image_probability_predictions <- average_vectors_for_images(patch_probability_predictions,patches_per_image,levels(class_names),reduced_types,1,number_of_classes)      
+      transformed_data <- image_probability_predictions$image_weights
+      transformed_types <- image_probability_predictions$image_types
+      
+      costIndexes <- which(image_folds==1,arr.ind=TRUE)
+      testIndexes <- which(image_folds==i,arr.ind=TRUE)
+      trainIndexes <- -testIndexes
+
+      # Quick heuristic parameter tuning
+      image_cost <- LiblineaR::heuristicC(SparseM::as.matrix(transformed_data[costIndexes,]))
+
+      train_data <- as.matrix.csr(transformed_data[trainIndexes,])
+      test_data <- as.matrix.csr(transformed_data[testIndexes,])
+
+      weights <- vector(mode="double",length=length(unique(transformed_types[trainIndexes])))
+      names(weights) <- levels(class_names)
+      for(j in 1:length(weights)) { 
+        weights[j] <- sum(transformed_types[trainIndexes]==unique(type_vector)[j])
+      }
+      max_number <- max(weights)
+      for(j in 1:length(weights)) { 
+        weights[j] <- max_number/weights[j]
+      }
+
+      image_svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(transformed_types[trainIndexes],levels=unique(type_vector),labels=levels(class_names)),cost=image_cost,wi=weights,type=svm_run_type)
+      prediction_values <- predict(image_svm_model,test_data)$predictions
+                      
+      
+
+      image_pred_table <- table(prediction_values,factor(transformed_types[testIndexes],levels=unique(type_vector),labels=actual_names))
+      image_accuracies[i] <- sum(diag(image_pred_table))/sum(image_pred_table)
+
+      
+      ml_results$multisvm[[i]]$svm_model <- svm_model
+      ml_results$multisvm[[i]]$patch_svm_model <- svm_model      
+      ml_results$multisvm[[i]]$svm_image_training_indices <- shuffled_order[trainIndexes]
+      ml_results$multisvm[[i]]$svm_patch_accuracies <- patch_accuracies
+      ml_results$multisvm[[i]]$svm_image_accuracies <- image_accuracies
     }
 
     if(verbose) {
