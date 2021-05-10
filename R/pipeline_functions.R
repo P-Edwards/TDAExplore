@@ -562,7 +562,7 @@ TDAExplore <- function(parameters=FALSE,
       print("Starting per-landscape SVM")
     }
 
-    svm_run_type <- 4
+    svm_run_type <- 2
     ml_results$multisvm <- list()
 
     # Cross validation on PCA-rotated patch landscapes
