@@ -361,13 +361,12 @@ TDAExplore <- function(parameters=FALSE,
 
   if(length(type_vector)>=2147483647) { 
     warning("There are more patches in your data set than the maximum supported by sparse matrices (2147483647 patches is the max). Continuing, but memory costs will be significantly higher.")
-    unscrambled_data <- SparseM::as.matrix(do.call(rbind,unscrambled_data))
+    unscrambled_data <- scale(SparseM::as.matrix(do.call(rbind,unscrambled_data)),center=TRUE,scale=FALSE)
   } else { 
-    unscrambled_data <- as.matrix.csr(do.call(rbind,unscrambled_data))
+    unscrambled_data <- as.matrix.csr(scale(SparseM::as.matrix(do.call(rbind,unscrambled_data)),center=TRUE,scale=FALSE))
   }
 
-  if(pca!=FALSE) { 
-    unscrambled_data <- scale(SparseM::as.matrix(unscrambled_data),center=TRUE,scale=FALSE)
+  if(pca!=FALSE) {     
     ml_results$landscapes_svd <- RSpectra::svds(SparseM::as.matrix(unscrambled_data),k=1000,nu=0,nv=1000)
     unscrambled_data <- SparseM::as.matrix(unscrambled_data)%*%(ml_results$landscapes_svd$v)
     unscrambled_data <- scale(unscrambled_data)
@@ -654,7 +653,7 @@ TDAExplore <- function(parameters=FALSE,
 
       named_types <- factor(reduced_types[testIndexes],levels = unique(type_vector),labels=levels(class_names))
 
-      image_probability_predictions <- average_vectors_for_images(reduced_data,patches_per_image,levels(class_names),reduced_types,1,number_of_classes)      
+      image_probability_predictions <- average_vectors_for_images(patch_probability_predictions,patches_per_image,levels(class_names),reduced_types,1,number_of_classes)      
       transformed_data <- image_probability_predictions$image_weights
       transformed_types <- image_probability_predictions$image_types
       
