@@ -361,9 +361,18 @@ TDAExplore <- function(parameters=FALSE,
 
   if(length(type_vector)>=2147483647) { 
     warning("There are more patches in your data set than the maximum supported by sparse matrices (2147483647 patches is the max). Continuing, but memory costs will be significantly higher.")
-    unscrambled_data <- scale(SparseM::as.matrix(do.call(rbind,unscrambled_data)),center=TRUE,scale=FALSE)
+    if(opt$multisvm) { 
+        unscrambled_data <- scale(SparseM::as.matrix(do.call(rbind,unscrambled_data)),center=TRUE,scale=FALSE)
+      } else { 
+        unscrambled_data <- SparseM::as.matrix(do.call(rbind,unscrambled_data))
+      }
   } else { 
-    unscrambled_data <- as.matrix.csr(scale(SparseM::as.matrix(do.call(rbind,unscrambled_data)),center=TRUE,scale=FALSE))
+    if(opt$multisvm) { 
+        unscrambled_data <- as.matrix.csr(scale(SparseM::as.matrix(do.call(rbind,unscrambled_data)),center=TRUE,scale=FALSE))
+      } else { 
+        unscrambled_data <- as.matrix.csr(do.call(rbind,unscrambled_data))
+      }
+    
   }
 
   if(pca!=FALSE) {     
@@ -677,7 +686,8 @@ TDAExplore <- function(parameters=FALSE,
         weights[j] <- max_number/weights[j]
       }
 
-      image_svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(transformed_types[trainIndexes],levels=unique(type_vector),labels=levels(class_names)),cost=image_cost,wi=weights,type=svm_run_type)
+      # L1 regularization on this step
+      image_svm_model <- LiblineaR::LiblineaR(data=train_data,target=factor(transformed_types[trainIndexes],levels=unique(type_vector),labels=levels(class_names)),cost=image_cost,wi=weights,type=5)
       prediction_values <- predict(image_svm_model,test_data)$predictions
                       
       
