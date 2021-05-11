@@ -654,7 +654,7 @@ TDAExplore <- function(parameters=FALSE,
 
       named_types <- factor(reduced_types[testIndexes],levels = unique(type_vector),labels=levels(class_names))
 
-      image_probability_predictions <- average_vectors_for_images(patch_probability_predictions,patches_per_image,levels(class_names),reduced_types,1,number_of_classes)      
+      image_probability_predictions <- average_vectors_for_images(reduced_data,patches_per_image,levels(class_names),reduced_types,1,number_of_classes)      
       transformed_data <- image_probability_predictions$image_weights
       transformed_types <- image_probability_predictions$image_types
       
