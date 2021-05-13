@@ -361,13 +361,13 @@ TDAExplore <- function(parameters=FALSE,
 
   if(length(type_vector)>=2147483647) { 
     warning("There are more patches in your data set than the maximum supported by sparse matrices (2147483647 patches is the max). Continuing, but memory costs will be significantly higher.")
-    if(opt$multisvm) { 
+    if(multisvm!=FALSE) { 
         unscrambled_data <- scale(SparseM::as.matrix(do.call(rbind,unscrambled_data)),center=TRUE,scale=FALSE)
       } else { 
         unscrambled_data <- SparseM::as.matrix(do.call(rbind,unscrambled_data))
       }
   } else { 
-    if(opt$multisvm) { 
+    if(multisvm!=FALSE) { 
         unscrambled_data <- as.matrix.csr(scale(SparseM::as.matrix(do.call(rbind,unscrambled_data)),center=TRUE,scale=FALSE))
       } else { 
         unscrambled_data <- as.matrix.csr(do.call(rbind,unscrambled_data))
