@@ -15,6 +15,7 @@ TDAExplore(
   radius_of_patches = FALSE,
   patch_ratio = 2,
   svm = FALSE,
+  multisvm = FALSE,
   randforest = FALSE,
   number_of_folds = 5,
   pca = FALSE,
@@ -50,9 +51,11 @@ for saving, the user must save the results themselves if desired. ./tda_explores
 
 \item{patch_ratio}{The number of patches sampled per image will be patch_ratio*(PIXEL AREA OF IMAGE)/(PIXEL AREA OF SINGLE PATCH). Default is 2.}
 
-\item{svm}{If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image.}
+\item{svm}{If set to TRUE, trains and tests SVM. If set to FALSE, only computes landscapes for each image. Default is FALSE.}
 
-\item{randforest}{Experimental. If set to TRUE, trains and tests random forest model. Supports multiclass. Could take prohitively long if --pca is not TRUE. Default is FALSE.}
+\item{multisvm}{If set to TRUE, trains and tests multi-class SVM. If set to FALSE, only computes landscapes for each image.}
+
+\item{randforest}{If set to TRUE, trains and tests random forest model. Supports multiclass. Could take prohitively long if --pca is not TRUE. Default is FALSE.}
 
 \item{number_of_folds}{The number of folds to use in SVM cross-validation. The default is 5.}
 
